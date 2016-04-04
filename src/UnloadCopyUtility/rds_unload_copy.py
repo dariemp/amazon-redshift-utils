@@ -4,14 +4,25 @@ import base64
 import datetime
 import boto
 from boto import kms, s3
+from os.path import exists
 from subprocess import Popen, PIPE
 from redshift_unload_copy import encryptionKeyID, options, set_timeout_stmt, \
                         conn_to_rs, decrypt, tokeniseS3Path, s3Delete, getConfig
 
-pg_dump_cmd = "/usr/lib/postgresql/9.3/bin/pg_dump -Fc -h %s -p %s -U %s -n %s %s | gzip"
+pg_bin_dir_ubuntu = "/usr/lib/postgresql/9.3/bin"
+pg_bin_dir_amzn = "/usr/lib64/pgsql93/bin"
 
-pg_restore_cmd = "gunzip | /usr/lib/postgresql/9.3/bin/pg_restore -Fc -c -C -h %s -p %s -U %s -n %s -d %s"
+pg_dump_cmd = "%s/pg_dump -Fc -h %s -p %s -U %s -n %s %s | gzip"
 
+pg_restore_cmd = "gunzip | %s/pg_restore -Fc -c -C -h %s -p %s -U %s -n %s -d %s"
+
+def get_bin_dir():
+    if exists(pg_bin_dir_ubuntu):
+        return pg_bin_dir_ubuntu
+    elif exists(pg_bin_dir_amzn):
+        return pg_bin_dir_amzn
+    else:
+        return ""
 
 def unload_data(path, host, port, user, password, db, s3_client,
                 schema, s3_access_key, s3_secret_key):
@@ -19,7 +30,7 @@ def unload_data(path, host, port, user, password, db, s3_client,
     bucket = s3_client.get_bucket(bucket_name)
     key = bucket.new_key(key_name=key_path)
     key.encrypted = True
-    pg_dump = pg_dump_cmd % (host, port, user, schema, db)
+    pg_dump = pg_dump_cmd % (get_bin_dir(), host, port, user, schema, db)
     print "Running pg_dump and gzipping output...",
     sys.stdout.flush()
     proc = Popen(pg_dump, stdout=PIPE, shell=True, env={"PGPASSWORD": password})
@@ -32,7 +43,7 @@ def unload_data(path, host, port, user, password, db, s3_client,
 
 def clean_db(host, port, superuser, su_password, db):
     conn = conn_to_rs(host, port, "postgres", superuser, su_password)
-    print "Re-creating destination database...."
+    print "Re-creating destination database....",
     conn.query("drop database %s;" % db)
     conn.query("create database %s;" % db)
     print "done."
@@ -42,7 +53,7 @@ def copy_data(path, host, port, user, password, db, s3_client,
     bucket_name, key_path = tokeniseS3Path(path)
     bucket = s3_client.get_bucket(bucket_name)
     key = bucket.get_key(key_path)
-    pg_restore = pg_restore_cmd % (host, port, user, schema, db)
+    pg_restore = pg_restore_cmd % (get_bin_dir(), host, port, user, schema, db)
     proc = Popen(pg_restore, stdin=PIPE, shell=True, env={"PGPASSWORD": password})
     print "Running gunzip and pg_restore on S3 data...",
     sys.stdout.flush()
