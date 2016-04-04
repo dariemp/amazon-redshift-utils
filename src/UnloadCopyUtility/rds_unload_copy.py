@@ -81,14 +81,6 @@ def main(args):
     # load the configuration
     config = getConfig(args[1], s3_client)
 
-    nowString = "{:%Y-%m-%d_%H-%M-%S}".format(datetime.datetime.now())
-    filename = "db-%s.sql.gz" % nowString
-    # parse options
-    dataStagingPath = "%s/%s" % (config['s3Staging']['path'].rstrip("/"), filename)
-    if not dataStagingPath.startswith("s3://"):
-        print "s3Staging.path must be a path to S3"
-        sys.exit(-1)
-
     accessKey = config['s3Staging']['aws_access_key_id']
     secretKey = config['s3Staging']['aws_secret_access_key']
     deleteOnSuccess = config['s3Staging']['deleteOnSuccess']
@@ -111,6 +103,14 @@ def main(args):
     dest_user = destConfig['connectUser']
     dest_superuser = destConfig['superUser']
     dest_schema = 'schemaName' in destConfig and destConfig['schemaName'] or src_schema
+
+    nowString = "{:%Y-%m-%d_%H-%M-%S}".format(datetime.datetime.now())
+    filename = "%s-%s.sql.gz" % (src_db, nowString)
+    # parse options
+    dataStagingPath = "%s/%s" % (config['s3Staging']['path'].rstrip("/"), filename)
+    if not dataStagingPath.startswith("s3://"):
+        print "s3Staging.path must be a path to S3"
+        sys.exit(-1)
 
     kmsClient = boto.kms.connect_to_region(region)
 
