@@ -6,7 +6,7 @@ import boto
 from boto import kms, s3
 from subprocess import Popen, PIPE
 from redshift_unload_copy import encryptionKeyID, options, set_timeout_stmt, \
-                        decrypt, tokeniseS3Path, s3Delete, getConfig
+                        conn_to_rs, decrypt, tokeniseS3Path, s3Delete, getConfig
 
 pg_dump_cmd = "/usr/lib/postgresql/9.3/bin/pg_dump -Fc -h %s -p %s -U %s -n %s %s | gzip"
 
@@ -28,6 +28,13 @@ def unload_data(path, host, port, user, password, db, s3_client,
     print "Sending pg_dump output to S3....",
     sys.stdout.flush()
     key.set_contents_from_string(stdout, encrypt_key=True)
+    print "done."
+
+def clean_db(host, port, superuser, su_password, db):
+    conn = conn_to_rs(host, port, "postgres", superuser, su_password)
+    print "Re-creating destination database...."
+    conn.query("drop database %s;" % db)
+    conn.query("create database %s;" % db)
     print "done."
 
 def copy_data(path, host, port, user, password, db, s3_client,
@@ -91,6 +98,7 @@ def main(args):
     dest_port = destConfig['port']
     dest_db = destConfig['db']
     dest_user = destConfig['connectUser']
+    dest_superuser = destConfig['superUser']
     dest_schema = 'schemaName' in destConfig and destConfig['schemaName'] or src_schema
 
     kmsClient = boto.kms.connect_to_region(region)
@@ -98,6 +106,8 @@ def main(args):
     # decrypt the source and destination passwords
     src_pwd = decrypt(srcConfig["connectPwd"], kmsClient)
     dest_pwd = decrypt(destConfig["connectPwd"], kmsClient)
+    dest_su_pwd = decrypt(destConfig["superUserPwd"], kmsClient)
+
 
     # decrypt aws access keys
     s3_access_key = decrypt(accessKey, kmsClient)
@@ -106,6 +116,7 @@ def main(args):
     unload_data(dataStagingPath, src_host, src_port, src_user, src_pwd, src_db,
                 s3_client, src_schema, s3_access_key, s3_secret_key)
 
+    clean_db(dest_host, dest_port, dest_superuser, dest_su_pwd, dest_db)
     copy_data(dataStagingPath, dest_host, dest_port, dest_user, dest_pwd, dest_db,
               s3_client, dest_schema, s3_access_key, s3_secret_key)
 
