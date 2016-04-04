@@ -27,13 +27,6 @@ import datetime
 from pg import DB
 from boto import kms, s3
 
-kmsClient = None
-s3Client = None
-nowString = None
-config = None
-region = None
-bucket = None
-key = None
 
 encryptionKeyID = 'alias/RedshiftUnloadCopyUtility'
 
@@ -109,7 +102,7 @@ def copy_data(conn, aws_access_key_id, aws_secret_key, master_symmetric_key, dat
     conn.query(copy_stmt % (schema_name, table_name, dataStagingPath, aws_access_key_id, aws_secret_key, master_symmetric_key))
 
 
-def decrypt(b64EncodedValue):
+def decrypt(b64EncodedValue, kmsClient):
     return kmsClient.decrypt(base64.b64decode(b64EncodedValue))['Plaintext']
 
 
@@ -121,35 +114,31 @@ def tokeniseS3Path(path):
     return (bucketName, prefix)
 
 
-def s3Delete(stagingPath):
+def s3Delete(stagingPath, s3_client):
     print "Cleaning up S3 Data Staging Location %s" % (stagingPath)
     s3Info = tokeniseS3Path(stagingPath)
 
-    stagingBucket = s3Client.get_bucket(s3Info[0])
+    stagingBucket = s3_client.get_bucket(s3Info[0])
 
     for key in stagingBucket.list(s3Info[1]):
         stagingBucket.delete_key(key)
 
 
-def getConfig(path):
-    # datetime alias for operations
-    global nowString
-    nowString = "{:%Y-%m-%d_%H-%M-%S}".format(datetime.datetime.now())
-
-    global config
-
+def getConfig(path, s3_client):
     if path.startswith("s3://"):
         # download the configuration from s3
         s3Info = tokeniseS3Path(path)
 
-        bucket = s3Client.get_bucket(s3Info[0])
+        bucket = s3_client.get_bucket(s3Info[0])
         key = bucket.get_key(s3Info[1])
 
         configContents = key.get_contents_as_string()
-        config = json.loads(configContents)
+        return json.loads(configContents)
     else:
+        config = None
         with open(path) as f:
             config = json.load(f)
+        return config
 
 
 def usage():
@@ -167,17 +156,16 @@ def main(args):
     if len(args) != 3:
         usage()
 
-    global region
     region = args[2]
-
-    global s3Client
-    s3Client = boto.s3.connect_to_region(region)
+    s3_client = boto.s3.connect_to_region(region)
 
     # load the configuration
-    getConfig(args[1])
+    config = getConfig(args[1], s3_client)
 
+    nowString = "{:%Y-%m-%d_%H-%M-%S}".format(datetime.datetime.now())
     # parse options
-    dataStagingPath = "%s/%s/" % (config['s3Staging']['path'].rstrip("/") , nowString)
+    dataStagingPath = "%s/%s/" % (config['s3Staging']['path'].rstrip("/"),
+                                  nowString)
     if not dataStagingPath.startswith("s3://"):
         print "s3Staging.path must be a path to S3"
         sys.exit(-1)
@@ -206,7 +194,6 @@ def main(args):
     dest_schema = 'schemaName' in destConfig and destConfig['schemaName'] or src_schema
     dest_table = 'tableName' in srcConfig and 'tableName' in destConfig and destConfig['tableName'] or None
 
-    global kmsClient
     kmsClient = boto.kms.connect_to_region(region)
 
     # create a new data key for the unload operation
@@ -215,12 +202,12 @@ def main(args):
     master_symmetric_key = base64.b64encode(dataKey['Plaintext'])
 
     # decrypt the source and destination passwords
-    src_pwd = decrypt(srcConfig["connectPwd"])
-    dest_pwd = decrypt(destConfig["connectPwd"])
+    src_pwd = decrypt(srcConfig["connectPwd"], kmsClient)
+    dest_pwd = decrypt(destConfig["connectPwd"], kmsClient)
 
     # decrypt aws access keys
-    s3_access_key = decrypt(accessKey)
-    s3_secret_key = decrypt(secretKey)
+    s3_access_key = decrypt(accessKey, kmsClient)
+    s3_secret_key = decrypt(secretKey, kmsClient)
 
     src_conn = conn_to_rs(src_host, src_port, src_db, src_user,
                           src_pwd)
@@ -260,7 +247,7 @@ def main(args):
     dest_conn.close()
 
     if deleteOnSuccess:
-        s3Delete(dataStagingPath)
+        s3Delete(dataStagingPath, s3_client)
 
 
 if __name__ == "__main__":
