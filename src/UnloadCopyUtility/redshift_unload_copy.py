@@ -220,12 +220,6 @@ def main(args):
     else:
         src_tables = src_conn.get_tables(False)
 
-    if len(dest_conn.get_tables(False)) < len(src_tables):
-        create_view_table_ddl_generator(src_conn)
-        create_dest_tables = True
-    else:
-        create_dest_tables = False
-
     table_prefix = src_schema + "."
     for src_table in src_tables:
         if not src_table.startswith(table_prefix):
@@ -233,9 +227,8 @@ def main(args):
         src_table = src_table.replace(table_prefix, "")
         if len(src_tables) > 1:
             dest_table = src_table
-            if create_dest_tables:
-                dest_conn.query("drop table %s;" % dest_table)
-                copy_table_ddl(src_conn, dest_conn, dest_schema, dest_table)
+            dest_conn.query("drop table %s;" % dest_table)
+            copy_table_ddl(src_conn, dest_conn, dest_schema, dest_table)
         unload_data(src_conn, s3_access_key, s3_secret_key,
                     master_symmetric_key, dataStagingPath,
                     src_schema, src_table)
