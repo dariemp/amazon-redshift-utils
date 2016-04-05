@@ -79,12 +79,14 @@ def unload_data(conn, aws_access_key_id, aws_secret_key, master_symmetric_key, d
 
 
 def create_view_table_ddl_generator(conn):
-    print "Creating admin schema if not exists..."
+    print "Creating admin schema if not exists...",
     conn.query("create schema if not exists admin;")
+    print "done."
     with open("../AdminViews/v_generate_tbl_ddl.sql") as f:
         create_view_stmt = f.read()
-        print "Creating view to export table DDL..."
+        print "Creating view to export table DDL...",
         conn.query(create_view_stmt)
+        print "done."
 
 
 def copy_table_ddl(src_conn, dest_conn, schema_name, table_name):
@@ -220,7 +222,7 @@ def main(args):
     else:
         src_tables = src_conn.get_tables(False)
 
-    create_view_table_ddl_generator(dest_conn)
+    create_view_table_ddl_generator(src_conn)
     table_prefix = src_schema + "."
     for src_table in src_tables:
         if not src_table.startswith(table_prefix):
