@@ -220,6 +220,7 @@ def main(args):
     else:
         src_tables = src_conn.get_tables(False)
 
+    create_view_table_ddl_generator(dest_conn)
     table_prefix = src_schema + "."
     for src_table in src_tables:
         if not src_table.startswith(table_prefix):
