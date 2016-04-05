@@ -227,7 +227,7 @@ def main(args):
         src_table = src_table.replace(table_prefix, "")
         if len(src_tables) > 1:
             dest_table = src_table
-            dest_conn.query("drop table %s if exists;" % dest_table)
+            dest_conn.query("drop table if exists %s;" % dest_table)
             copy_table_ddl(src_conn, dest_conn, dest_schema, dest_table)
         unload_data(src_conn, s3_access_key, s3_secret_key,
                     master_symmetric_key, dataStagingPath,
