@@ -1,3 +1,6 @@
 PyGreSQL==5.0
 wheel==0.24.0
 boto==2.39.0
+pg8000==1.10.4
+shortuuid==0.4.3
+six==1.10.0
