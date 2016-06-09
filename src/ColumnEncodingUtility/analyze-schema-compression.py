@@ -562,7 +562,7 @@ def analyze(table_info):
                 # get the primary key statement
                 statements.extend([get_primary_key(analyze_schema, target_schema, table_name, target_table)]);
                 if use_copy:
-                    unload = ("unload (select * from %s.%s) to s3://%s/%s "
+                    unload = ("unload ('select * from %s.%s') to 's3://%s/%s' "
                               "credentials 'aws_access_key_id=%s;aws_secret_access_key=%s' "
                               "manifest "
                               "gzip "
@@ -577,7 +577,7 @@ def analyze(table_info):
                                             s3_prefix,
                                             aws_access_key,
                                             aws_secret_key)
-                    copy = ("copy %s.%s from s3://%s/%s/manifest "
+                    copy = ("copy %s.%s from 's3://%s/%s/manifest' "
                             "credentials 'aws_access_key_id=%s;aws_secret_access_key=%s' "
                             "manifest "
                             "gzip "
