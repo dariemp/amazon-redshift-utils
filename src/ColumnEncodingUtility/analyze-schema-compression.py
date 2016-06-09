@@ -16,7 +16,7 @@ analyze-schema-compression.py
 * express or implied. See the License for the specific language governing
 * permissions and limitations under the License.
 
-Analyses all tables in a Redshift Cluster Schema, and outputs a SQL script to 
+Analyses all tables in a Redshift Cluster Schema, and outputs a SQL script to
 migrate database tables with sub-optimal column encodings to optimal column
 encodings as recommended by the database engine.
 
@@ -58,7 +58,7 @@ NO_CONNECTION = 5
 
 # timeout for retries - 100ms
 RETRY_TIMEOUT = 100. / 1000
-    
+
 # compiled regular expressions
 IDENTITY_RE = re.compile(r'"identity"\((?P<current>.*), (?P<base>.*), \'(?P<seed>\d+),(?P<step>\d+)\'.*\)')
 
@@ -93,7 +93,7 @@ def execute_query(str):
     conn = get_pg_conn()
     cursor = conn.cursor()
     cursor.execute(str)
-    
+
     try:
         results = cursor.fetchall()
     except pg8000.ProgrammingError as e:
@@ -101,27 +101,27 @@ def execute_query(str):
             return None
         else:
             raise e
-        
+
     return results
-    
-    
+
+
 def close_conn(conn):
     try:
         conn.close()
     except Exception as e:
         if debug:
             print(e)
-         
-            
+
+
 def cleanup():
     # close all connections and close the output file
     if master_conn != None:
         close_conn(master_conn)
-    
+
     for key in db_connections:
-        if db_connections[key] != None:            
-            close_conn(db_connections[key]) 
-    
+        if db_connections[key] != None:
+            close_conn(db_connections[key])
+
     if output_file_handle != None:
         output_file_handle.close()
 
@@ -139,49 +139,49 @@ def print_statements(statements):
         for s in statements:
             if s != None:
                 write(s)
-        
-        
+
+
 def write(s):
     # write output to all the places we want it
     print(s)
     if output_file_handle != None:
         output_file_handle.write(str(s) + "\n")
         output_file_handle.flush()
-        
-        
+
+
 def get_pg_conn():
     global db_connections
     pid = str(os.getpid())
-    
+
     conn = None
-    
+
     # get the database connection for this PID
     try:
         conn = db_connections[pid]
     except KeyError:
         pass
-        
+
     if conn == None:
         # connect to the database
         if debug:
             comment('Connect [%s] %s:%s:%s:%s' % (pid, db_host, db_port, db, db_user))
-        
+
         try:
             conn = pg8000.connect(user=db_user, host=db_host, port=db_port, database=db, password=db_pwd, ssl=ssl_option, timeout=None, keepalives=1, keepalives_idle=200, keepalives_interval=200, keepalives_count=5)
         except Exception as e:
             write(e)
             write('Unable to connect to Cluster Endpoint')
             cleanup()
-            return ERROR      
-        
-        # set default search path        
+            return ERROR
+
+        # set default search path
         search_path = 'set search_path = \'$user\',public,%s' % (analyze_schema)
         if target_schema != None and target_schema != analyze_schema:
             search_path = search_path + ', %s' % (target_schema)
-            
+
         if debug:
             comment(search_path)
-        
+
         cursor = None
         try:
             cursor = conn.cursor()
@@ -200,25 +200,25 @@ def get_pg_conn():
                 comment(set_query_group)
 
             cursor.execute(set_query_group)
-        
+
         if query_slot_count != None and query_slot_count != 1:
             set_slot_count = 'set wlm_query_slot_count = %s' % (query_slot_count)
-            
+
             if debug:
                 comment(set_slot_count)
-                
+
             cursor.execute(set_slot_count)
 
         # set a long statement timeout
         set_timeout = "set statement_timeout = '1200000'"
         if debug:
             comment(set_timeout)
-            
+
         cursor.execute(set_timeout)
-        
+
         # cache the connection
         db_connections[pid] = conn
-        
+
     return conn
 
 
@@ -236,7 +236,7 @@ def get_identity(adsrc):
 
 def get_foreign_keys(analyze_schema, target_schema, table_name):
     has_fks = False
-    
+
     fk_statement = '''SELECT /* fetching foreign key relations */ conname,
   pg_catalog.pg_get_constraintdef(cons.oid, true) as condef
  FROM pg_catalog.pg_constraint cons,
@@ -252,36 +252,36 @@ def get_foreign_keys(analyze_schema, target_schema, table_name):
 
     if (debug):
         comment(fk_statement)
-    
+
     foreign_keys = execute_query(fk_statement)
     fk_statements = []
-    
+
     for fk in foreign_keys:
         has_fks = True
-        references_clause = fk[1].replace('REFERENCES ', 'REFERENCES %s.' % (target_schema))      
+        references_clause = fk[1].replace('REFERENCES ', 'REFERENCES %s.' % (target_schema))
         fk_statements.append('alter table %s."%s" add constraint %s %s;' % (target_schema, table_name, fk[0], references_clause))
-    
+
     if has_fks:
         return fk_statements
     else:
         return None
-            
-            
+
+
 def get_primary_key(table_schema, target_schema, original_table, new_table):
     pk_statement = 'alter table %s."%s" add primary key (' % (target_schema, new_table)
     has_pks = False
-    
+
     # get the primary key columns
-    statement = '''SELECT /* fetch primary key information */   
+    statement = '''SELECT /* fetch primary key information */
   att.attname
 FROM pg_index ind, pg_class cl, pg_attribute att, pg_namespace pgn
-WHERE 
-  cl.oid = '%s'::regclass 
-  AND ind.indrelid = cl.oid 
+WHERE
+  cl.oid = '%s'::regclass
+  AND ind.indrelid = cl.oid
   AND att.attrelid = cl.oid
   and cl.relnamespace = pgn.oid
   and pgn.nspname = '%s'
-  and (ind.indkey[0] = att.attnum or 
+  and (ind.indkey[0] = att.attnum or
        ind.indkey[1] = att.attnum or
        ind.indkey[2] = att.attnum or
        ind.indkey[3] = att.attnum or
@@ -294,21 +294,21 @@ order by att.attnum;
 
     if debug:
         comment(statement)
-            
+
     pks = execute_query(statement)
-    
+
     for pk in pks:
         has_pks = True
         pk_statement = pk_statement + pk[0] + ','
-        
+
     pk_statement = pk_statement[:-1] + ');'
-    
+
     if has_pks:
         return pk_statement
     else:
         return None
-    
-        
+
+
 def get_table_desc(table_name):
     # get the table definition from the dictionary so that we can get relevant details for each column
     statement = '''select /* fetching column descriptions for table */ "column", type, encoding, distkey, sortkey, "notnull", ad.adsrc
@@ -321,33 +321,33 @@ def get_table_desc(table_name):
 
     if debug:
         comment(statement)
-        
+
     description = execute_query(statement)
-    
+
     descr = {}
     for row in description:
         if debug:
             comment("Table Description: %s" % str(row))
         descr[row[0]] = row
-        
+
     return descr
 
 
 def get_count_raw_columns(table_name):
     # count the number of raw encoded columns which are not the sortkey, from the dictionary
     statement = '''select /* getting count of raw columns in table */ count(9) count_raw_columns
-      from pg_table_def 
+      from pg_table_def
       where schemaname = '%s'
-        and lower(encoding) in ('raw','none') 
-        and sortkey != 1        
+        and lower(encoding) in ('raw','none')
+        and sortkey != 1
         and tablename = '%s'
 ''' % (analyze_schema, table_name)
 
     if debug:
         comment(statement)
-        
+
     description = execute_query(statement)
-    
+
     return description
 
 
@@ -359,7 +359,7 @@ def run_commands(conn, commands):
             try:
                 if c.count(';') > 1:
                     subcommands = c.split(';')
-                    
+
                     for s in subcommands:
                         if s != None and s != '':
                             cursor.execute(s.replace("\n", ""))
@@ -371,20 +371,20 @@ def run_commands(conn, commands):
                 conn.rollback()
                 write(traceback.format_exc())
                 return False
-    
+
     return True
-        
-        
-def analyze(table_info):     
+
+
+def analyze(table_info):
     table_name = table_info[0]
     dist_style = table_info[3]
-    
+
     # get the count of columns that have raw encoding applied
     table_unoptimised = False
     count_unoptimised = 0
-    encodings_modified = False    
+    encodings_modified = False
     output = get_count_raw_columns(table_name)
-    
+
     if output == None:
         write("Unable to determine potential RAW column encoding for %s" % table_name)
         return ERROR
@@ -393,7 +393,7 @@ def analyze(table_info):
             if row[0] > 0:
                 table_unoptimised = True
                 count_unoptimised += row[0]
-                
+
     if not table_unoptimised and not force:
         comment("Table %s does not require encoding optimisation" % table_name)
         return OK
@@ -401,18 +401,18 @@ def analyze(table_info):
         comment("Table %s contains %s unoptimised columns" % (table_name, count_unoptimised))
         if force:
             comment("Using Force Override Option")
-    
+
         statement = 'analyze compression %s.%s' % (analyze_schema, table_name)
-        
+
         if comprows != None:
             statement = statement + (" comprows %s" % int(comprows))
-            
+
         try:
             if debug:
                 comment(statement)
-                
+
             comment("Analyzing Table '%s'" % (table_name,))
-        
+
             # run the analyze in a loop, because it could be locked by another process modifying rows and get a timeout
             analyze_compression_result = None
             analyze_retry = 10
@@ -429,27 +429,27 @@ def analyze(table_info):
                     write(e)
                     attempt_count += 1
                     last_exception = e
-                    
+
                     # Exponential Backoff
                     time.sleep(2 ** attempt_count * RETRY_TIMEOUT)
-    
+
             if analyze_compression_result == None:
                 if last_exception != None:
                     write("Unable to analyze %s due to Exception %s" % (table_name, last_exception.message))
                 else:
                     write("Unknown Error")
                 return ERROR
-            
+
             if target_schema == analyze_schema:
                 target_table = '%s_$mig' % table_name
             else:
                 target_table = table_name
-            
+
             create_table = 'begin;\nlock table %s.%s;\ncreate table %s.%s(' % (analyze_schema, table_name, target_schema, target_table,)
-            
+
             # query the table column definition
             descr = get_table_desc(table_name)
-                
+
             encode_columns = []
             statements = []
             sortkeys = {}
@@ -457,13 +457,13 @@ def analyze(table_info):
             has_identity = False
             non_identity_columns = []
             fks = []
-            
+
             # process each item given back by the analyze request
             for row in analyze_compression_result:
                 if debug:
                     comment("Analyzed Compression Row State: %s" % str(row))
                 col = row[1]
-                
+
                 # compare the previous encoding to the new encoding
                 new_encoding = row[2]
                 old_encoding = descr[col][2]
@@ -472,41 +472,41 @@ def analyze(table_info):
                     encodings_modified = True
                     if debug:
                         comment("Column %s will be modified from %s encoding to %s encoding" % (col, old_encoding, new_encoding))
-                
+
                 # fix datatypesj from the description type to the create type
-                col_type = descr[col][1]                
+                col_type = descr[col][1]
                 col_type = col_type.replace('character varying', 'varchar').replace('without time zone', '')
-                
+
                 # is this the dist key?
                 distkey = descr[col][3]
                 if str(distkey).upper()[0] == 'T':
                     distkey = 'DISTKEY'
                 else:
                     distkey = ''
-                    
+
                 # is this the sort key?
                 sortkey = descr[col][4]
                 if sortkey != 0:
                     # add the absolute ordering of the sortkey to the list of all sortkeys
                     sortkeys[abs(sortkey)] = col
-                    
+
                     if (sortkey < 0):
                         has_zindex_sortkeys = True
-                    
+
                 # don't compress first sort key
                 if abs(sortkey) == 1:
                     compression = 'RAW'
                 else:
                     compression = row[2]
-                    
-                # extract null/not null setting            
+
+                # extract null/not null setting
                 col_null = descr[col][5]
-                
+
                 if str(col_null).upper() == 'TRUE':
                     col_null = 'NOT NULL'
                 else:
                     col_null = ''
-    
+
                 # get default or identity syntax for this column
                 default_or_identity = descr[col][6]
                 if default_or_identity:
@@ -520,69 +520,102 @@ def analyze(table_info):
                 else:
                     default_value = ''
                     non_identity_columns.append(col)
-    
+
                 # add the formatted column specification
                 encode_columns.extend(['"%s" %s %s %s encode %s %s'
                                        % (col, col_type, default_value, col_null, compression, distkey)])
-            
+
             # if this table's encodings have not changed, then dont do a modification, including if the force options is set
             if not encodings_modified:
                 comment("Column Encoding resulted in an identical table - no changes will be made")
             else:
                 comment("Column Encoding will be modified for %s.%s" % (analyze_schema, table_name))
-                
+
                 # add all the column encoding statements on to the create table statement, suppressing the leading comma on the first one
                 for i, s in enumerate(encode_columns):
                     create_table += '\n%s%s' % ('' if i == 0 else ',', s)
-        
+
                 create_table = create_table + '\n)\n'
-                
+
                 # add diststyle all if needed
                 if dist_style == 'ALL':
                     create_table = create_table + 'diststyle all\n'
-                    
+
                 # add sort key as a table block to accommodate multiple columns
                 if len(sortkeys) > 0:
-                    sortkey = '%sSORTKEY(' % ('INTERLEAVED ' if has_zindex_sortkeys else '')    
-                    
+                    sortkey = '%sSORTKEY(' % ('INTERLEAVED ' if has_zindex_sortkeys else '')
+
                     for i in range(1, len(sortkeys) + 1):
                         sortkey = sortkey + sortkeys[i]
-                       
+
                         if i != len(sortkeys):
                             sortkey = sortkey + ','
                         else:
                             sortkey = sortkey + ')\n'
-                    create_table = create_table + (' %s ' % sortkey)                
-                
+                    create_table = create_table + (' %s ' % sortkey)
+
                 create_table = create_table + ';'
-                
+
                 # run the create table statement
-                statements.extend([create_table])         
-                
+                statements.extend([create_table])
+
                 # get the primary key statement
                 statements.extend([get_primary_key(analyze_schema, target_schema, table_name, target_table)]);
-    
-                # insert the old data into the new table
-                # if we have identity column(s), we can't insert data from them, so do selective insert
-                if has_identity:
-                    source_columns = ', '.join(non_identity_columns)
-                    mig_columns = '(' + source_columns + ')'
+                if use_copy:
+                    unload = ("unload (select * from %s.%s) to s3://%s/%s "
+                              "credentials 'aws_access_key_id=%s;aws_secret_access_key=%s' "
+                              "manifest "
+                              "gzip "
+                              "delimiter '^' "
+                              "addquotes "
+                              "null as 'NULL' "
+                              "escape "
+                              "allowoverwrite;")
+                    unload_stmt = unload % (analyze_schema,
+                                            table_name,
+                                            s3_bucket,
+                                            s3_prefix,
+                                            aws_access_key,
+                                            aws_secret_key)
+                    copy = ("copy %s.%s from s3://%s/%s/manifest "
+                            "credentials 'aws_access_key_id=%s;aws_secret_access_key=%s' "
+                            "manifest "
+                            "gzip "
+                            "delimiter '^' "
+                            "removequotes "
+                            "explicit_ids "
+                            "null as 'NULL' "
+                            "escape;")
+                    copy_stmt = copy % (target_schema,
+                                        target_table,
+                                        s3_bucket,
+                                        s3_prefix,
+                                        aws_access_key,
+                                        aws_secret_key)
+                    statements.extend([unload_stmt, copy_stmt])
+
                 else:
-                    source_columns = '*'
-                    mig_columns = ''
-    
-                insert = 'insert into %s.%s %s select %s from %s.%s;' % (target_schema,
-                                                                         target_table,
-                                                                         mig_columns,
-                                                                         source_columns,
-                                                                         analyze_schema,
-                                                                         table_name)
-                statements.extend([insert])
-                        
+                    # insert the old data into the new table
+                    # if we have identity column(s), we can't insert data from them, so do selective insert
+                    if has_identity:
+                        source_columns = ', '.join(non_identity_columns)
+                        mig_columns = '(' + source_columns + ')'
+                    else:
+                        source_columns = '*'
+                        mig_columns = ''
+
+                    insert = 'insert into %s.%s %s select %s from %s.%s;' % (target_schema,
+                                                                             target_table,
+                                                                             mig_columns,
+                                                                             source_columns,
+                                                                             analyze_schema,
+                                                                             table_name)
+                    statements.extend([insert])
+
                 # analyze the new table
                 analyze = 'analyze %s.%s;' % (target_schema, target_table)
                 statements.extend([analyze])
-                        
+
                 if (target_schema == analyze_schema):
                     # rename the old table to _$old or drop
                     if drop_old_data:
@@ -590,18 +623,18 @@ def analyze(table_info):
                     else:
                         # the alter table statement for the current data will use the first 104 characters of the original table name, the current datetime as YYYYMMDD and a 10 digit random string
                         drop = 'alter table %s.%s rename to %s_%s_%s_$old;' % (target_schema, table_name, table_name[0:104] , datetime.date.today().strftime("%Y%m%d") , shortuuid.ShortUUID().random(length=10))
-                    
+
                     statements.extend([drop])
-                            
+
                     # rename the migrate table to the old table name
                     rename = 'alter table %s.%s rename to %s;' % (target_schema, target_table, table_name)
                     statements.extend([rename])
-                
+
                 # add foreign keys
                 fks = get_foreign_keys(analyze_schema, target_schema, table_name)
-                
+
                 statements.extend(['commit;'])
-                
+
                 if do_execute:
                     if not run_commands(get_pg_conn(), statements):
                         if not ignore_errors:
@@ -609,24 +642,24 @@ def analyze(table_info):
                                 write("Error running statements: %s" % (str(statements),))
                             return ERROR
                 else:
-                    comment("No encoding modifications required for %s.%s" % (analyze_schema, table_name))    
+                    comment("No encoding modifications required for %s.%s" % (analyze_schema, table_name))
         except Exception as e:
             write('Exception %s during analysis of %s' % (e.message, table_name))
             write(traceback.format_exc())
             return ERROR
-        
+
         print_statements(statements)
-        
+
         return (OK, fks, encodings_modified)
 
 
 def usage(with_message):
     write('Usage: analyze-schema-compression.py')
     write('       Generates a script to optimise Redshift column encodings on all tables in a schema\n')
-    
+
     if with_message != None:
         write(with_message + "\n")
-        
+
     write('Arguments: --db             - The Database to Use')
     write('           --db-user        - The Database User to connect to')
     write('           --db-host        - The Cluster endpoint')
@@ -645,11 +678,15 @@ def usage(with_message):
     write('           --comprows       - Set the number of rows to use for Compression Encoding Analysis')
     write('           --query_group    - Set the query_group for all queries')
     write('           --ssl-option     - Set SSL to True or False (default False)')
+    write('           --use-copy       - Use COPY instead of INSERT to migrate data, using an S3 bucket')
+    write('           --s3-bucket      - The S3 bucket to use with --use-copy')
+    write('           --aws-access-key - Access key needed to authenticate user in S3 when using --use-copy')
+    write('           --aws-secret-key - Secret key needed to authenticate user in S3 when using --use-copy')
     sys.exit(INVALID_ARGS)
 
 
 # method used to configure global variables, so that we can call the run method
-def configure(_output_file, _db, _db_user, _db_pwd, _db_host, _db_port, _analyze_schema, _target_schema, _analyze_table, _threads, _do_execute, _query_slot_count, _ignore_errors, _force, _drop_old_data, _comprows, _query_group, _debug, _ssl_option):
+def configure(_output_file, _db, _db_user, _db_pwd, _db_host, _db_port, _analyze_schema, _target_schema, _analyze_table, _threads, _do_execute, _query_slot_count, _ignore_errors, _force, _drop_old_data, _comprows, _query_group, _debug, _ssl_option, _use_copy, _s3_bucket, _s3_prefix, _aws_access_key, _aws_secret_key):
     # setup globals
     global db
     global db_user
@@ -670,9 +707,14 @@ def configure(_output_file, _db, _db_user, _db_pwd, _db_host, _db_port, _analyze
     global query_group
     global output_file
     global ssl_option
+    global use_copy
+    global s3_bucket
+    global s3_prefix
+    global aws_access_key
+    global aws_secret_key
 
     # set global variable values
-    output_file = _output_file    
+    output_file = _output_file
     db = None if _db == "" else _db
     db_user = _db_user
     db_pwd = _db_pwd
@@ -681,7 +723,7 @@ def configure(_output_file, _db, _db_user, _db_pwd, _db_host, _db_port, _analyze
     analyze_schema = None if _analyze_schema == "" else _analyze_schema
     analyze_table = None if _analyze_table == "" else _analyze_table
     target_schema = _analyze_schema if _target_schema == "" or _target_schema == None else _target_schema
-    debug = False if _debug == None else _debug    
+    debug = False if _debug == None else _debug
     do_execute = False if _do_execute == None else _do_execute
     ignore_errors = False if _ignore_errors == None else _ignore_errors
     force = False if _force == None else _force
@@ -691,7 +733,12 @@ def configure(_output_file, _db, _db_user, _db_pwd, _db_host, _db_port, _analyze
     comprows = None if _comprows == -1 else int(_comprows)
     query_slot_count = int(_query_slot_count)
     ssl_option = False if _ssl_option == None else _ssl_option
-    
+    use_copy = bool(_use_copy)
+    s3_bucket = None if not _s3_bucket else _s3_bucket
+    s3_prefix = None if not _s3_prefix else _s3_prefix
+    aws_access_key = None if not _aws_access_key else _aws_access_key
+    aws_secret_key = None if not _aws_secret_key else _aws_secret_key
+
     if (debug == True):
         comment("Redshift Column Encoding Utility Configuration")
         comment("output_file: %s " % (output_file))
@@ -712,33 +759,38 @@ def configure(_output_file, _db, _db_user, _db_pwd, _db_host, _db_port, _analyze
         comment("comprows: %s " % (comprows))
         comment("query_group: %s " % (query_group))
         comment("ssl_option: %s " % (ssl_option))
-    
-    
+        comment("use_copy: %s" % (use_copy))
+        comment("s3_bucket: %s" % (s3_bucket))
+        comment("s3_prefix: %s" % (s3_prefix))
+        comment("aws_access_key: %s" % (aws_access_key))
+        comment("aws_secret_key: %s" % (aws_secret_key))
+
+
 def run():
     global master_conn
     global output_file_handle
-    
+
     # open the output file
     output_file_handle = open(output_file, 'w')
-    
+
     # get a connection for the controlling processes
     master_conn = get_pg_conn()
-    
+
     if master_conn == None or master_conn == ERROR:
         return NO_CONNECTION
-    
+
     comment("Connected to %s:%s:%s as %s" % (db_host, db_port, db, db_user))
     if analyze_table != None:
-        snippet = "Table '%s'" % analyze_table        
+        snippet = "Table '%s'" % analyze_table
     else:
         snippet = "Schema '%s'" % analyze_schema
-        
+
     comment("Analyzing %s for Columnar Encoding Optimisations with %s Threads..." % (snippet, threads))
-    
+
     if do_execute:
         if drop_old_data:
             really_go = getpass.getpass("This will make irreversible changes to your database, and cannot be undone. Type 'Yes' to continue: ")
-            
+
             if not really_go == 'Yes':
                 write("Terminating on User Request")
                 return TERMINATED_BY_USER
@@ -746,20 +798,20 @@ def run():
         comment("Recommended encoding changes will be applied automatically...")
     else:
         pass
-    
-    if analyze_table != None:        
+
+    if analyze_table != None:
         statement = '''select trim(a.name) as table, b.mbytes, a.rows, decode(pgc.reldiststyle,0,'EVEN',1,'KEY',8,'ALL') dist_style
 from (select db_id, id, name, sum(rows) as rows from stv_tbl_perm a group by db_id, id, name) as a
 join pg_class as pgc on pgc.oid = a.id
 join pg_namespace as pgn on pgn.oid = pgc.relnamespace
 join (select tbl, count(*) as mbytes
 from stv_blocklist group by tbl) b on a.id=b.tbl
-and pgn.nspname = '%s' and pgc.relname = '%s'        
-        ''' % (analyze_schema, analyze_table)        
+and pgn.nspname = '%s' and pgc.relname = '%s'
+        ''' % (analyze_schema, analyze_table)
     else:
         # query for all tables in the schema ordered by size descending
         comment("Extracting Candidate Table List...")
-        
+
         statement = '''select trim(a.name) as table, b.mbytes, a.rows, decode(pgc.reldiststyle,0,'EVEN',1,'KEY',8,'ALL') dist_style
 from (select db_id, id, name, sum(rows) as rows from stv_tbl_perm a group by db_id, id, name) as a
 join pg_class as pgc on pgc.oid = a.id
@@ -770,33 +822,33 @@ where pgn.nspname = '%s'
   and a.name::text SIMILAR TO '[A-Za-z_][A-Za-z0-9_]*'
 order by 2;
         ''' % (analyze_schema,)
-    
+
     if debug:
         comment(statement)
-    
+
     query_result = execute_query(statement)
-    
+
     if query_result == None:
         comment("Unable to issue table query - aborting")
         return ERROR
-    
+
     analyze_tables = []
     for row in query_result:
         analyze_tables.append(row)
-    
+
     comment("Analyzing %s table(s) which contain allocated data blocks" % (len(analyze_tables)))
 
     if debug:
         [comment(str(x)) for x in analyze_tables]
 
     result = []
-    
-    if analyze_tables != None:   
-        # we'll use a Pool to process all the tables with multiple threads, or just sequentially if 1 thread is requested         
+
+    if analyze_tables != None:
+        # we'll use a Pool to process all the tables with multiple threads, or just sequentially if 1 thread is requested
         if threads > 1:
             # setup executor pool
             p = Pool(threads)
-        
+
             try:
                 # run all concurrent steps and block on completion
                 result = p.map(analyze, analyze_tables)
@@ -812,18 +864,18 @@ order by 2;
                 p.terminate()
                 cleanup()
                 return ERROR
-                
+
             p.terminate()
         else:
             for t in analyze_tables:
                 result.append(analyze(t))
     else:
         comment("No Tables Found to Analyze")
-        
+
     # do a final vacuum if needed
     if drop_old_data:
         write("vacuum delete only;")
-    
+
     # return any non-zero worker output statuses
     modified_tables = 0
     for ret in result:
@@ -834,29 +886,29 @@ order by 2;
         else:
             return_code = ret
             fk_commands = None
-        
+
         if fk_commands != None and len(fk_commands) > 0:
             print_statements(fk_commands)
-            
+
             if do_execute:
                 if not run_commands(master_conn, fk_commands):
                     if not ignore_errors:
                         write("Error running commands %s" % (fk_commands,))
                         return ERROR
-            
+
         if return_code != OK:
             write("Error in worker thread: return code %d. Exiting." % (return_code,))
             return return_code
-    
+
     comment("Performed modification of %s tables" % modified_tables)
-    
+
     if (do_execute):
         if not master_conn.commit():
             return ERROR
-    
+
     comment('Processing Complete')
-    cleanup()    
-    
+    cleanup()
+
     return OK
 
 
@@ -880,9 +932,14 @@ def main(argv):
     comprows = None
     query_group = None
     ssl_option = None
-    
-    supported_args = """db= db-user= db-host= db-port= target-schema= analyze-schema= analyze-table= threads= debug= output-file= do-execute= slot-count= ignore-errors= force= drop-old-data= comprows= query_group= ssl-option="""
-    
+    use_copy = None
+    s3_bucket = None
+    s3_prefix = None
+    aws_access_key = None
+    aws_secret_key = None
+
+    supported_args = """db= db-user= db-host= db-port= target-schema= analyze-schema= analyze-table= threads= debug= output-file= do-execute= slot-count= ignore-errors= force= drop-old-data= comprows= query_group= ssl-option= use-copy= s3-bucket= s3-prefix= aws-access-key= aws-secret-key="""
+
     # extract the command line arguments
     try:
         optlist, remaining = getopt.getopt(sys.argv[1:], "", supported_args.split())
@@ -901,7 +958,7 @@ def main(argv):
             if value == '' or value == None:
                 usage()
             else:
-                db_user = value               
+                db_user = value
         elif arg == "--db-host":
             if value == '' or value == None:
                 usage()
@@ -957,25 +1014,42 @@ def main(argv):
         elif arg == "--comprows":
             comprows = int(value)
         elif arg == "--query_group":
-            if value != '' and value != None:
+            if value != '' and value is not None:
                 query_group = value
         elif arg == "--ssl-option":
             if value == 'true' or value == 'True':
                 ssl_option = True
             else:
                 ssl_option = False
+        elif arg == "--use-copy":
+            if value == 'true' or value == 'True':
+                use_copy = True
+            else:
+                use_copy = False
+        elif arg == "--s3-bucket":
+            if value != '' or value is not None:
+                s3_bucket = value
+        elif arg == "--s3-prefix":
+            if value != '' or value is not None:
+                s3_prefix = value
+        elif arg == "--aws-access-key":
+            if value != '' or value is not None:
+                aws_access_key = value
+        elif arg == "--aws-secret-key":
+            if value != '' or value is not None:
+                aws_secret_key = value
         else:
             assert False, "Unsupported Argument " + arg
             usage()
-    
+
     # Validate that we've got all the args needed
     if db == None:
         usage("Missing Parameter 'db'")
     if db_user == None:
         usage("Missing Parameter 'db-user'")
-    if db_host == None:        
+    if db_host == None:
         usage("Missing Parameter 'db-host'")
-    if db_port == None:        
+    if db_port == None:
         usage("Missing Parameter 'db-port'")
     if output_file == None:
         usage("Missing Parameter 'output-file'")
@@ -983,20 +1057,23 @@ def main(argv):
         usage("You must supply analyze-schema or analyze-table")
     if target_schema == None:
         target_schema = analyze_schema
-        
+    if use_copy:
+        if not (s3_bucket and s3_prefix and aws_access_key and aws_secret_key):
+            usage("To use COPY instead of INSERT you must supply s3-bucket, s3-prefix, aws-access-key and aws-secret-key")
+
     # Reduce to 1 thread if we're analyzing a single table
     if analyze_table != None:
         threads = 1
-        
+
     # get the database password
     db_pwd = getpass.getpass("Password <%s>: " % db_user)
-    
+
     # setup the configuration
-    configure(output_file, db, db_user, db_pwd, db_host, db_port, analyze_schema, target_schema, analyze_table, threads, do_execute, query_slot_count, ignore_errors, force, drop_old_data, comprows, query_group, debug, ssl_option)
-    
+    configure(output_file, db, db_user, db_pwd, db_host, db_port, analyze_schema, target_schema, analyze_table, threads, do_execute, query_slot_count, ignore_errors, force, drop_old_data, comprows, query_group, debug, ssl_option, use_copy, s3_bucket, s3_prefix, aws_access_key, aws_secret_key)
+
     # run the analyser
     result_code = run()
-    
+
     # exit based on the provided return code
     sys.exit(result_code)
 
